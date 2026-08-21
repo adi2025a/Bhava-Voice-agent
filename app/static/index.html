@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bhava Voice - Multi-Agent AI System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+        <div class="globe globe-3"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header Section -->
+        <header class="app-header">
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="22"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>Bhava Voice <span class="badge">Multi-Agent</span></h1>
+                    <p class="subtitle">Real-time Bi-directional Modular Voice Pipeline</p>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-indicator" id="wsStatusIndicator">
+                    <span class="dot disconnected"></span>
+                    <span id="wsStatusText">Disconnected</span>
+                </div>
+                <button id="configToggleBtn" class="icon-btn" title="System Settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Settings Modal/Drawer -->
+        <div class="modal-overlay hidden" id="configModal">
+            <div class="glass-card modal-content">
+                <div class="modal-header">
+                    <h3>Modular Pipeline Configuration</h3>
+                    <button class="close-btn" id="closeModalBtn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="config-item">
+                        <label for="sttSelect">Speech-To-Text (STT) Module</label>
+                        <select id="sttSelect" class="custom-select">
+                            <option value="groq">Groq Whisper API (whisper-large-v3)</option>
+                            <option value="mock">Mock STT (Keyless Fallback)</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="dialogueSelect">Dialogue Engine Module</label>
+                        <select id="dialogueSelect" class="custom-select">
+                            <option value="multi_agent">Multi-Agent Supervisor (Groq Llama 3.3 70B)</option>
+                            <option value="mock">Mock Multi-Agent Engine</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="ttsSelect">Text-To-Speech (TTS) Module</label>
+                        <select id="ttsSelect" class="custom-select">
+                            <option value="edge">Microsoft Edge Neural TTS (100% Free)</option>
+                            <option value="mock">Mock Silent TTS</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
+                        <label for="voiceSelect">Edge Neural Voice</label>
+                        <select id="voiceSelect" class="custom-select">
+                            <option value="en-US-AvaNeural">en-US-AvaNeural (Female, Natural)</option>
+                            <option value="en-US-AndrewNeural">en-US-AndrewNeural (Male, Warm)</option>
+                            <option value="en-GB-SoniaNeural">en-GB-SoniaNeural (British Female)</option>
+                            <option value="en-AU-WilliamNeural">en-AU-WilliamNeural (Australian Male)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="saveConfigBtn" class="btn btn-primary">Apply Settings</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Layout Grid -->
+        <main class="main-layout">
+            <!-- Left Column: Audio Mic Control & Visualizer -->
+            <section class="glass-card mic-card">
+                <div class="card-title">
+                    <span class="icon">🎙️</span> Voice Stream Controller
+                </div>
+
+                <!-- Canvas Spectrum Visualizer -->
+                <div class="visualizer-container">
+                    <canvas id="waveformCanvas"></canvas>
+                    <div class="visualizer-overlay" id="micStatusText">Click to Speak</div>
+                </div>
+
+                <!-- Record Button -->
+                <div class="mic-controls">
+                    <button id="micBtn" class="mic-button" title="Toggle Live Microphone Stream">
+                        <div class="mic-pulse"></div>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Text Query Fallback Input -->
+                <div class="text-input-group">
+                    <input type="text" id="textInput" placeholder="Or type a prompt directly..." autocomplete="off">
+                    <button id="sendTextBtn" class="btn btn-secondary">
+                        <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Column: Agent Router State & Live Transcript -->
+            <section class="glass-card chat-card">
+                <!-- Router Agent Thought Banner -->
+                <div class="agent-routing-banner hidden" id="routingBanner">
+                    <div class="banner-icon">🤖</div>
+                    <div class="banner-body">
+                        <span class="banner-label" id="routerAgentName">Supervisor Router</span>
+                        <p class="banner-text" id="routerThought">Analyzing intent and selecting optimal specialized agent...</p>
+                    </div>
+                </div>
+
+                <!-- Active Agent Indicator Card -->
+                <div class="active-agent-badge" id="activeAgentBadge">
+                    <span class="sparkle">✨</span> Active Agent: <strong id="activeAgentName">Waiting...</strong>
+                </div>
+
+                <!-- Conversation Messages Scroll Box -->
+                <div class="chat-history" id="chatHistory">
+                    <div class="chat-placeholder">
+                        <div class="placeholder-icon">💬</div>
+                        <p>Speak into your microphone or type a message to start the voice interaction loop.</p>
+                    </div>
+                </div>
+
+                <div class="chat-actions">
+                    <button id="clearChatBtn" class="btn-text">Reset Session</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
