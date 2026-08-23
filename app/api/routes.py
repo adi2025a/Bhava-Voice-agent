@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File
 from pydantic import BaseModel
 from app.core.config import settings
 from app.services.dialogue.multi_agent import AGENTS_CONFIG
+from app.core.factory import VoicePipelineFactory
 
 router = APIRouter(prefix="/api", tags=["System"])
 
@@ -65,6 +66,15 @@ async def update_config(req: ConfigUpdateReq):
             "default_tts_voice": settings.default_tts_voice
         }
     }
+
+
+@router.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    stt_service = VoicePipelineFactory.create_stt()
+    contents = await file.read()
+    filename = file.filename or "input.webm"
+    text = await stt_service.transcribe(contents, filename=filename)
+    return {"text": text}
 
 
 class StopReq(BaseModel):

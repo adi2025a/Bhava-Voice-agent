@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.3",
+    "python-multipart>=0.0.32",
     "uvicorn[standard]>=0.52.4",
     "websockets>=17.0.1",
 ]

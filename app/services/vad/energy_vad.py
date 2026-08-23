@@ -57,15 +57,29 @@ class EnergyVAD(BaseVAD):
         if not audio_bytes:
             return VADResult(is_speech=False, confidence=0.0)
 
-        rms = self._calculate_rms(audio_bytes)
-        is_speech = rms >= self.energy_threshold
-        confidence = min(1.0, rms / (self.energy_threshold * 2.0)) if is_speech else 0.0
+        # Detect if chunk is container data (e.g. WebM / Opus) rather than raw PCM
+        is_container = (
+            audio_bytes.startswith(b'\x1a\x45\xdf\xa3') or 
+            b'\x1f\x43\xb6\x75' in audio_bytes[:50] or
+            (len(audio_bytes) % 2 != 0)
+        )
+
+        if is_container:
+            # WebM Opus VBR: silence frames are small (~100-700 bytes per 250ms chunk),
+            # active speech frames are significantly larger (>850 bytes per 250ms chunk).
+            chunk_size = len(audio_bytes)
+            is_speech = chunk_size > 850
+            confidence = min(1.0, chunk_size / 2500.0) if is_speech else 0.0
+        else:
+            rms = self._calculate_rms(audio_bytes)
+            is_speech = rms >= self.energy_threshold
+            confidence = min(1.0, rms / (self.energy_threshold * 2.0)) if is_speech else 0.0
 
         speech_start = False
         speech_end = False
 
-        # Approximate chunk duration assuming 16-bit mono PCM
-        chunk_duration_ms = (len(audio_bytes) / (2 * sample_rate)) * 1000.0 if sample_rate > 0 else 50.0
+        # Approximate streaming chunk interval (~250ms default from browser MediaRecorder)
+        chunk_duration_ms = 250.0
 
         if is_speech:
             if not self.is_currently_speaking:

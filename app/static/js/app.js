@@ -1,16 +1,32 @@
+/**
+ * Bhava Voice - Multi-Agent AI Web Application
+ * Modular, real-time voice pipeline controller.
+ */
+
 class VoiceApp {
     constructor() {
+        // Core Web API instances
         this.ws = null;
         this.mediaRecorder = null;
         this.audioChunks = [];
-        this.isRecording = false;
         this.audioContext = null;
         this.analyser = null;
         this.animFrameId = null;
-        this.currentAgentBubble = null;
-        this.audioQueue = [];
-        this.isPlayingAudio = false;
 
+        // State Flags
+        this.isRecording = false;
+        this.isSpeaking = false;
+        this.isPlayingAudio = false;
+        this.wasSpeaking = false;
+        this.silenceStartTime = null;
+
+        // Audio Playback Queue
+        this.audioQueue = [];
+        this.currentPlayingAudio = null;
+        this.currentAgentBubble = null;
+        this.sessionId = null;
+
+        // Initialize App
         this.initDOMElements();
         this.initWebSocket();
         this.initCanvasVisualizer();
@@ -36,7 +52,7 @@ class VoiceApp {
         this.activeAgentBadge = document.getElementById('activeAgentBadge');
         this.activeAgentName = document.getElementById('activeAgentName');
 
-        // Modal
+        // Modal Controls
         this.configModal = document.getElementById('configModal');
         this.configToggleBtn = document.getElementById('configToggleBtn');
         this.closeModalBtn = document.getElementById('closeModalBtn');
@@ -49,27 +65,40 @@ class VoiceApp {
     }
 
     initWebSocket() {
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/voice`;
-        
+        console.log('[Bhava App] Connecting to WebSocket:', wsUrl);
+        this.setWSStatus(false, 'Connecting...');
+
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
+            console.log('[Bhava App] WebSocket Connected successfully.');
             this.setWSStatus(true, 'Connected');
         };
 
         this.ws.onclose = () => {
+            console.warn('[Bhava App] WebSocket connection closed. Retrying in 3 seconds...');
             this.setWSStatus(false, 'Disconnected');
             setTimeout(() => this.initWebSocket(), 3000);
         };
 
         this.ws.onerror = (err) => {
-            console.error('WebSocket Error:', err);
+            console.error('[Bhava App] WebSocket Error:', err);
             this.setWSStatus(false, 'Error');
         };
 
         this.ws.onmessage = (event) => {
-            this.handleServerMessage(JSON.parse(event.data));
+            try {
+                const data = JSON.parse(event.data);
+                this.handleServerMessage(data);
+            } catch (e) {
+                console.error('[Bhava App] Error parsing server message:', e, event.data);
+            }
         };
     }
 
@@ -113,6 +142,22 @@ class VoiceApp {
         this.saveConfigBtn.addEventListener('click', () => this.saveConfiguration());
     }
 
+    getSupportedMimeType() {
+        const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/ogg;codecs=opus',
+            'audio/wav'
+        ];
+        for (const t of types) {
+            if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) {
+                return t;
+            }
+        }
+        return '';
+    }
+
     async toggleMicrophone() {
         if (this.isRecording) {
             this.stopRecording();
@@ -122,14 +167,29 @@ class VoiceApp {
     }
 
     async startRecording() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            alert('WebSocket is disconnected. Reconnecting...');
+            this.initWebSocket();
+            return;
+        }
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            this.audioChunks = [];
+            const mimeType = this.getSupportedMimeType();
+            const options = mimeType ? { mimeType } : {};
+            console.log('[Bhava App] Starting MediaRecorder with MIME:', mimeType || 'default');
 
-            // Web Audio Analyser setup for visualizer
+            this.mediaRecorder = new MediaRecorder(stream, options);
+            this.audioChunks = [];
+            this.wasSpeaking = false;
+            this.silenceStartTime = null;
+
+            // Web Audio Analyser setup for real-time visualizer & PCM VAD
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
             }
             const source = this.audioContext.createMediaStreamSource(stream);
             this.analyser = this.audioContext.createAnalyser();
@@ -137,33 +197,83 @@ class VoiceApp {
             source.connect(this.analyser);
 
             this.mediaRecorder.ondataavailable = async (e) => {
-                if (e.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const arrayBuffer = await e.data.arrayBuffer();
-                    this.ws.send(arrayBuffer);
+                if (e.data && e.data.size > 0) {
+                    this.audioChunks.push(e.data);
+                    // Also stream live chunk over WebSocket for low latency buffer
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        const arrayBuffer = await e.data.arrayBuffer();
+                        this.ws.send(arrayBuffer);
+                    }
                 }
             };
 
-            this.mediaRecorder.onstop = () => {
+            this.mediaRecorder.onstop = async () => {
+                console.log('[Bhava App] MediaRecorder stopped. Total chunks collected:', this.audioChunks.length);
                 if (stream) stream.getTracks().forEach(track => track.stop());
+
+                if (this.audioChunks.length > 0) {
+                    const completeBlob = new Blob(this.audioChunks, { type: mimeType || 'audio/webm' });
+                    console.log('[Bhava App] Created complete audio Blob:', completeBlob.size, 'bytes');
+
+                    if (completeBlob.size > 500) {
+                        this.micStatusText.textContent = '⚡ Transcribing & Routing...';
+                        
+                        // Send complete audio blob over WebSocket or flush
+                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            const buffer = await completeBlob.arrayBuffer();
+                            this.ws.send(buffer);
+                            this.ws.send(JSON.stringify({ type: 'flush_audio' }));
+                        } else {
+                            // REST fallback if WebSocket disconnected
+                            this.uploadAudioBlobViaREST(completeBlob);
+                        }
+                    } else {
+                        this.micStatusText.textContent = 'Click mic to speak';
+                    }
+                }
+                this.audioChunks = [];
             };
 
             this.mediaRecorder.start(250);
             this.isRecording = true;
             this.micBtn.classList.add('recording');
-            this.micStatusText.textContent = '🎙️ Hands-free VAD Active: Listening...';
+            this.micStatusText.textContent = '🎙️ Listening... Speak now';
             this.drawVisualizer();
+
         } catch (err) {
-            console.error('Microphone Access Error:', err);
-            alert('Could not access microphone: ' + err.message);
+            console.error('[Bhava App] Microphone Error:', err);
+            alert('Microphone Access Error: ' + err.message);
         }
     }
 
     stopRecording() {
         if (this.mediaRecorder && this.isRecording) {
+            console.log('[Bhava App] Manually stopping recording...');
             this.mediaRecorder.stop();
             this.isRecording = false;
             this.micBtn.classList.remove('recording');
-            this.micStatusText.textContent = 'Click mic to resume listening';
+            this.micStatusText.textContent = 'Processing turn...';
+        }
+    }
+
+    async uploadAudioBlobViaREST(blob) {
+        try {
+            const formData = new FormData();
+            formData.append('file', blob, 'recording.webm');
+            console.log('[Bhava App] Sending audio blob via REST /api/transcribe...');
+            const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.text) {
+                console.log('[Bhava App] REST STT Transcribed Text:', data.text);
+                this.appendUserMessage(data.text);
+                // Send text input to prompt dialogue engine
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'text_input', text: data.text }));
+                }
+            }
+        } catch (e) {
+            console.error('[Bhava App] REST STT upload error:', e);
+            alert('Audio STT Error: ' + e.message);
         }
     }
 
@@ -171,11 +281,16 @@ class VoiceApp {
         const text = this.textInput.value.trim();
         if (!text) return;
         
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'text_input', text: text }));
-            this.textInput.value = '';
-            this.micStatusText.textContent = 'Processing Query...';
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            alert('WebSocket is disconnected. Reconnecting...');
+            this.initWebSocket();
+            return;
         }
+
+        console.log('[Bhava App] Sending text input:', text);
+        this.ws.send(JSON.stringify({ type: 'text_input', text: text }));
+        this.textInput.value = '';
+        this.micStatusText.textContent = 'Processing Query...';
     }
 
     handleServerMessage(data) {
@@ -187,12 +302,10 @@ class VoiceApp {
                 break;
 
             case 'vad_status':
-                if (data.is_speech) {
-                    this.micStatusText.textContent = `🗣️ Speech Detected (${Math.round(data.confidence * 100)}%)`;
-                } else if (data.speech_end) {
-                    this.micStatusText.textContent = `⚡ End of speech detected. Transcribing & Routing...`;
-                } else {
-                    this.micStatusText.textContent = this.isRecording ? '🎙️ Hands-free VAD: Listening...' : 'Click mic for Hands-free mode';
+                if (this.isRecording && !this.wasSpeaking) {
+                    if (data.is_speech) {
+                        this.micStatusText.textContent = `🗣️ Speech Detected (${Math.round(data.confidence * 100)}%)`;
+                    }
                 }
                 break;
 
@@ -220,18 +333,20 @@ class VoiceApp {
 
             case 'audio_end':
                 if (this.isRecording) {
-                    this.micStatusText.textContent = '🎙️ Hands-free VAD: Listening for next turn...';
+                    this.micStatusText.textContent = '🎙️ Listening for next turn...';
+                } else {
+                    this.micStatusText.textContent = 'Click mic to speak again';
                 }
                 break;
 
             case 'interrupted':
                 this.stopAudioPlayback();
-                this.micStatusText.textContent = '🛑 Streaming Response Interrupted';
+                this.micStatusText.textContent = '🛑 Turn Interrupted';
                 break;
 
             case 'error':
                 alert('Server Error: ' + data.message);
-                this.micStatusText.textContent = 'Click to Speak';
+                this.micStatusText.textContent = 'Click mic to speak';
                 break;
         }
     }
@@ -280,23 +395,19 @@ class VoiceApp {
     }
 
     stopStreamingTurn() {
-        // 1. Immediately halt audio playback and clear queue
         this.stopAudioPlayback();
 
-        // 2. Send stop control frame over WebSocket
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ type: 'stop' }));
         }
 
-        // 3. Call REST endpoint POST /api/stop
         fetch('/api/stop', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: this.sessionId })
         }).catch(err => console.error('Error calling /api/stop:', err));
 
-        // 4. Update UI
-        this.micStatusText.textContent = '🛑 Streaming Response Interrupted';
+        this.micStatusText.textContent = '🛑 Interrupted';
         this.activeAgentName.textContent = 'Interrupted';
         if (this.currentAgentBubble) {
             const contentDiv = this.currentAgentBubble.querySelector('.msg-content');
@@ -364,6 +475,36 @@ class VoiceApp {
         const bufferLength = this.analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         this.analyser.getByteFrequencyData(dataArray);
+
+        // Real-time PCM Volume VAD
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+        }
+        const avgVolume = sum / bufferLength;
+
+        const SPEECH_THRESHOLD = 8;
+        const SILENCE_TIMEOUT_MS = 1200;
+
+        if (avgVolume > SPEECH_THRESHOLD) {
+            this.wasSpeaking = true;
+            this.silenceStartTime = null;
+            this.micStatusText.textContent = `🗣️ Speech Detected (Vol: ${Math.round(avgVolume)})`;
+        } else if (this.wasSpeaking) {
+            if (!this.silenceStartTime) {
+                this.silenceStartTime = Date.now();
+            } else {
+                const silenceDuration = Date.now() - this.silenceStartTime;
+                this.micStatusText.textContent = `⚡ Silence detected (${(silenceDuration / 1000).toFixed(1)}s)...`;
+
+                if (silenceDuration >= SILENCE_TIMEOUT_MS) {
+                    console.log('[Bhava App] Client VAD: 1.2s silence reached. Stopping recording turn...');
+                    this.wasSpeaking = false;
+                    this.silenceStartTime = null;
+                    this.stopRecording();
+                }
+            }
+        }
 
         const width = this.canvas.offsetWidth;
         const height = this.canvas.offsetHeight;

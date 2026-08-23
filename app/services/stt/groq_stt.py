@@ -26,16 +26,25 @@ class GroqSTT(BaseSTT):
         if not audio_bytes or len(audio_bytes) < 100:
             return ""
 
-        try:
-            transcription = await self.client.audio.transcriptions.create(
-                file=(filename, audio_bytes),
-                model=self.model_name,
-                prompt="Voice assistant conversation transcription",
-                response_format="text",
-                language=language or "en"
-            )
-            text = transcription if isinstance(transcription, str) else transcription.text
-            return text.strip()
-        except Exception as e:
-            logger.error(f"Groq STT transcription error: {e}", exc_info=True)
-            raise e
+        candidate_models = [self.model_name]
+        if "whisper-large-v3-turbo" not in candidate_models:
+            candidate_models.append("whisper-large-v3-turbo")
+
+        last_error = None
+        for model in candidate_models:
+            try:
+                transcription = await self.client.audio.transcriptions.create(
+                    file=(filename, audio_bytes),
+                    model=model,
+                    prompt="Voice assistant conversation transcription",
+                    response_format="text",
+                    language=language or "en"
+                )
+                text = transcription if isinstance(transcription, str) else transcription.text
+                return text.strip()
+            except Exception as e:
+                logger.warning(f"Groq STT transcription attempt with model '{model}' failed: {e}")
+                last_error = e
+
+        logger.error(f"All Groq STT models failed: {last_error}", exc_info=True)
+        raise last_error

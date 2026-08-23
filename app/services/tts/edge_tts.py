@@ -1,9 +1,16 @@
 import logging
+import re
 from typing import AsyncGenerator, Optional
 import edge_tts
 from app.core.interfaces.tts import BaseTTS
 
 logger = logging.getLogger(__name__)
+
+EMOJI_PATTERN = re.compile(r'[\U00010000-\U0010FFFF\u2600-\u26FF\u2700-\u27BF]')
+
+def strip_emojis(text: str) -> str:
+    """Strip emojis from text to prevent TTS from reading emoji names out loud."""
+    return EMOJI_PATTERN.sub('', text)
 
 
 class EdgeTTSProvider(BaseTTS):
@@ -20,11 +27,12 @@ class EdgeTTSProvider(BaseTTS):
         text: str,
         voice: Optional[str] = None
     ) -> bytes:
-        if not text.strip():
+        clean_text = strip_emojis(text)
+        if not clean_text.strip():
             return b""
 
         target_voice = voice or self.default_voice
-        communicate = edge_tts.Communicate(text, target_voice)
+        communicate = edge_tts.Communicate(clean_text, target_voice)
         audio_data = bytearray()
 
         try:
@@ -49,16 +57,18 @@ class EdgeTTSProvider(BaseTTS):
             text_buffer += chunk_text
             # If buffer contains punctuation (sentence end), synthesize that sentence segment
             if any(p in text_buffer for p in [".", "!", "?", "\n", ";", ", "]):
-                if text_buffer.strip():
-                    communicate = edge_tts.Communicate(text_buffer, target_voice)
+                clean_segment = strip_emojis(text_buffer)
+                if clean_segment.strip():
+                    communicate = edge_tts.Communicate(clean_segment, target_voice)
                     async for audio_chunk in communicate.stream():
                         if audio_chunk["type"] == "audio":
                             yield audio_chunk["data"]
                 text_buffer = ""
 
         # Flush any remaining text in buffer
-        if text_buffer.strip():
-            communicate = edge_tts.Communicate(text_buffer, target_voice)
+        clean_segment = strip_emojis(text_buffer)
+        if clean_segment.strip():
+            communicate = edge_tts.Communicate(clean_segment, target_voice)
             async for audio_chunk in communicate.stream():
                 if audio_chunk["type"] == "audio":
                     yield audio_chunk["data"]
