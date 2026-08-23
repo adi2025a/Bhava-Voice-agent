@@ -22,6 +22,7 @@ class VoiceApp {
         this.wsStatusIndicator = document.getElementById('wsStatusIndicator');
         this.wsStatusText = document.getElementById('wsStatusText');
         this.micBtn = document.getElementById('micBtn');
+        this.stopBtn = document.getElementById('stopBtn');
         this.micStatusText = document.getElementById('micStatusText');
         this.textInput = document.getElementById('textInput');
         this.sendTextBtn = document.getElementById('sendTextBtn');
@@ -43,6 +44,7 @@ class VoiceApp {
         this.sttSelect = document.getElementById('sttSelect');
         this.dialogueSelect = document.getElementById('dialogueSelect');
         this.ttsSelect = document.getElementById('ttsSelect');
+        this.vadSelect = document.getElementById('vadSelect');
         this.voiceSelect = document.getElementById('voiceSelect');
     }
 
@@ -79,10 +81,17 @@ class VoiceApp {
 
     bindEvents() {
         this.micBtn.addEventListener('click', () => this.toggleMicrophone());
+        if (this.stopBtn) {
+            this.stopBtn.addEventListener('click', () => this.stopStreamingTurn());
+        }
         
         this.sendTextBtn.addEventListener('click', () => this.sendTextMessage());
         this.textInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendTextMessage();
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.stopStreamingTurn();
         });
 
         this.clearChatBtn.addEventListener('click', () => {
@@ -127,26 +136,21 @@ class VoiceApp {
             this.analyser.fftSize = 64;
             source.connect(this.analyser);
 
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    this.audioChunks.push(e.data);
-                }
-            };
-
-            this.mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-                const arrayBuffer = await audioBlob.arrayBuffer();
-                
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.mediaRecorder.ondataavailable = async (e) => {
+                if (e.data.size > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const arrayBuffer = await e.data.arrayBuffer();
                     this.ws.send(arrayBuffer);
                 }
-                stream.getTracks().forEach(track => track.stop());
             };
 
-            this.mediaRecorder.start(100);
+            this.mediaRecorder.onstop = () => {
+                if (stream) stream.getTracks().forEach(track => track.stop());
+            };
+
+            this.mediaRecorder.start(250);
             this.isRecording = true;
             this.micBtn.classList.add('recording');
-            this.micStatusText.textContent = 'Listening... Click to Stop';
+            this.micStatusText.textContent = '🎙️ Hands-free VAD Active: Listening...';
             this.drawVisualizer();
         } catch (err) {
             console.error('Microphone Access Error:', err);
@@ -159,7 +163,7 @@ class VoiceApp {
             this.mediaRecorder.stop();
             this.isRecording = false;
             this.micBtn.classList.remove('recording');
-            this.micStatusText.textContent = 'Processing Audio...';
+            this.micStatusText.textContent = 'Click mic to resume listening';
         }
     }
 
@@ -178,9 +182,22 @@ class VoiceApp {
         this.removePlaceholder();
 
         switch (data.type) {
+            case 'session_init':
+                this.sessionId = data.session_id;
+                break;
+
+            case 'vad_status':
+                if (data.is_speech) {
+                    this.micStatusText.textContent = `🗣️ Speech Detected (${Math.round(data.confidence * 100)}%)`;
+                } else if (data.speech_end) {
+                    this.micStatusText.textContent = `⚡ End of speech detected. Transcribing & Routing...`;
+                } else {
+                    this.micStatusText.textContent = this.isRecording ? '🎙️ Hands-free VAD: Listening...' : 'Click mic for Hands-free mode';
+                }
+                break;
+
             case 'stt_result':
                 this.appendUserMessage(data.text);
-                this.micStatusText.textContent = 'Click to Speak';
                 break;
 
             case 'agent_thought':
@@ -193,12 +210,23 @@ class VoiceApp {
                 this.appendAgentChunk(data.agent, data.role, data.text, data.is_final);
                 break;
 
+            case 'audio_start':
+                this.micStatusText.textContent = `🔊 ${data.agent || 'Agent'} is responding...`;
+                break;
+
             case 'audio_chunk':
                 this.enqueueAudioChunk(data.audio_b64, data.mime);
                 break;
 
             case 'audio_end':
-                // Completed turn audio synthesis
+                if (this.isRecording) {
+                    this.micStatusText.textContent = '🎙️ Hands-free VAD: Listening for next turn...';
+                }
+                break;
+
+            case 'interrupted':
+                this.stopAudioPlayback();
+                this.micStatusText.textContent = '🛑 Streaming Response Interrupted';
                 break;
 
             case 'error':
@@ -251,25 +279,66 @@ class VoiceApp {
         this.playNextAudioInQueue();
     }
 
+    stopStreamingTurn() {
+        // 1. Immediately halt audio playback and clear queue
+        this.stopAudioPlayback();
+
+        // 2. Send stop control frame over WebSocket
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'stop' }));
+        }
+
+        // 3. Call REST endpoint POST /api/stop
+        fetch('/api/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: this.sessionId })
+        }).catch(err => console.error('Error calling /api/stop:', err));
+
+        // 4. Update UI
+        this.micStatusText.textContent = '🛑 Streaming Response Interrupted';
+        this.activeAgentName.textContent = 'Interrupted';
+        if (this.currentAgentBubble) {
+            const contentDiv = this.currentAgentBubble.querySelector('.msg-content');
+            if (contentDiv) contentDiv.innerHTML += ' <em>[Interrupted by user]</em>';
+            this.currentAgentBubble = null;
+        }
+    }
+
+    stopAudioPlayback() {
+        this.audioQueue = [];
+        this.isPlayingAudio = false;
+        if (this.currentPlayingAudio) {
+            try {
+                this.currentPlayingAudio.pause();
+                this.currentPlayingAudio.currentTime = 0;
+            } catch (e) {}
+            this.currentPlayingAudio = null;
+        }
+    }
+
     playNextAudioInQueue() {
         if (this.isPlayingAudio || this.audioQueue.length === 0) return;
 
         this.isPlayingAudio = true;
-        const currentAudio = this.audioQueue.shift();
+        this.currentPlayingAudio = this.audioQueue.shift();
 
-        currentAudio.onended = () => {
+        this.currentPlayingAudio.onended = () => {
             this.isPlayingAudio = false;
+            this.currentPlayingAudio = null;
             this.playNextAudioInQueue();
         };
 
-        currentAudio.onerror = () => {
+        this.currentPlayingAudio.onerror = () => {
             this.isPlayingAudio = false;
+            this.currentPlayingAudio = null;
             this.playNextAudioInQueue();
         };
 
-        currentAudio.play().catch(e => {
+        this.currentPlayingAudio.play().catch(e => {
             console.error('Audio playback error:', e);
             this.isPlayingAudio = false;
+            this.currentPlayingAudio = null;
         });
     }
 
@@ -325,6 +394,7 @@ class VoiceApp {
                 this.sttSelect.value = data.active_providers.stt;
                 this.dialogueSelect.value = data.active_providers.dialogue;
                 this.ttsSelect.value = data.active_providers.tts;
+                if (data.active_providers.vad) this.vadSelect.value = data.active_providers.vad;
             }
         } catch (e) {
             console.error('Failed to load status:', e);
@@ -336,6 +406,7 @@ class VoiceApp {
             stt_provider: this.sttSelect.value,
             dialogue_provider: this.dialogueSelect.value,
             tts_provider: this.ttsSelect.value,
+            vad_provider: this.vadSelect.value,
             default_tts_voice: this.voiceSelect.value
         };
 

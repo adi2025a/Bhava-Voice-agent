@@ -281,7 +281,40 @@ h1 {
 }
 
 .mic-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
     position: relative;
+}
+
+.stop-button {
+    height: 48px;
+    padding: 0 1.2rem;
+    border-radius: 14px;
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid rgba(255, 71, 87, 0.4);
+    color: var(--danger);
+    font-family: var(--font-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(255, 71, 87, 0.2);
+}
+
+.stop-button:hover {
+    background: rgba(255, 71, 87, 0.3);
+    border-color: var(--danger);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255, 71, 87, 0.4);
+}
+
+.stop-button svg {
+    width: 18px;
+    height: 18px;
 }
 
 .mic-button {

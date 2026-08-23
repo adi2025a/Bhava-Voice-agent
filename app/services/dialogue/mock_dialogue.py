@@ -12,27 +12,35 @@ class MockDialogueEngine(BaseDialogueEngine):
 
     AGENT_PROFILES = [
         {
-            "name": "Code Specialist",
-            "role": "Technical expert on software, Python, and web architectures.",
+            "name": "Vedic & Spiritual Guide",
+            "role": "Spiritual Counselor & Scriptural Wisdom Expert",
             "responses": [
-                "That's a great question about software architecture! In Python, using FastAPI with WebSockets provides low-latency bi-directional streaming ideal for voice pipelines.",
-                "To optimize live audio streaming, you can process raw PCM chunks in small buffers of 100 to 200 milliseconds to minimize latency."
+                "In the Bhagavad Gita, Lord Krishna teaches us that we have a right to perform our duty, but never to the fruits of our actions. Focus on your effort with a peaceful heart.",
+                "Whenever life feels overwhelming, remember that the true self, the Atman, remains untouched by temporary storms. Take a deep breath and center your mind."
             ]
         },
         {
-            "name": "Creative Storyteller",
-            "role": "Imaginative roleplay and creative assistant.",
+            "name": "Empathetic Mindful Listener",
+            "role": "Emotional Support & Compassionate Companion",
             "responses": [
-                "Imagine a distant galaxy where AI neural networks communicate through vibrant streams of light across cosmic space!",
-                "Once upon a time in a bustling digital city, multiple agent bots worked in harmony to translate human speech into instant thoughts."
+                "I hear you, and your feelings are completely valid. It takes courage to open up about personal struggles. I'm right here listening.",
+                "Take this moment to pause. Whatever you are going through, remember that peace begins with self-compassion and gentle self-care."
             ]
         },
         {
-            "name": "Voice Concierge",
-            "role": "General friendly voice assistant.",
+            "name": "Dharma & Life Counselor",
+            "role": "Practical Life Wisdom & Right Action Counselor",
             "responses": [
-                "Hello! I'm your multi-agent voice assistant. I can help answer questions, write code, or just chat with you.",
-                "I've routed your query to our specialized agents. Everything is operating smoothly!"
+                "When facing difficult choices, ask yourself which path aligns with your true Dharma—your duty to yourself, your family, and truth.",
+                "Karma teaches us that every mindful action plants a seed of future harmony. Choose clarity over reaction."
+            ]
+        },
+        {
+            "name": "Bhava AI Host",
+            "role": "Bhava AI Call Companion & Assistant",
+            "responses": [
+                "Welcome to Bhava AI Call! I am here to help you connect with timeless spiritual wisdom and compassionate listening.",
+                "Feel free to share what is on your mind or ask any question. Our specialized guides are ready to support you."
             ]
         }
     ]

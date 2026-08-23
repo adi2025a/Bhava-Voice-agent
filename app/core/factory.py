@@ -3,17 +3,19 @@ from app.core.config import settings, Settings
 from app.core.interfaces.stt import BaseSTT
 from app.core.interfaces.dialogue import BaseDialogueEngine
 from app.core.interfaces.tts import BaseTTS
+from app.core.interfaces.vad import BaseVAD
 
 from app.services.stt import GroqSTT, MockSTT
 from app.services.dialogue import MultiAgentEngine, MockDialogueEngine
 from app.services.tts import EdgeTTSProvider, MockTTS
+from app.services.vad import EnergyVAD, MockVAD
 
 logger = logging.getLogger(__name__)
 
 
 class VoicePipelineFactory:
     """
-    Factory to instantiate swappable STT, Dialogue Engine, and TTS modules.
+    Factory to instantiate swappable STT, Dialogue Engine, TTS, and VAD modules.
     Allows easy switching of providers via environment variables or runtime parameters.
     """
 
@@ -39,7 +41,7 @@ class VoicePipelineFactory:
         logger.info(f"Initializing Dialogue Provider: '{provider}'")
 
         if provider == "multi_agent":
-            return MultiAgentEngine(api_key=app_settings.groq_api_key)
+            return MultiAgentEngine(api_key=app_settings.groq_api_key, model_name=app_settings.groq_llm_model)
         elif provider == "mock":
             return MockDialogueEngine()
         else:
@@ -58,3 +60,16 @@ class VoicePipelineFactory:
         else:
             logger.warning(f"Unknown TTS provider '{provider}'. Falling back to MockTTS.")
             return MockTTS()
+
+    @staticmethod
+    def create_vad(provider_name: str = None, app_settings: Settings = settings) -> BaseVAD:
+        provider = (provider_name or app_settings.vad_provider).lower()
+        logger.info(f"Initializing VAD Provider: '{provider}'")
+
+        if provider == "energy":
+            return EnergyVAD()
+        elif provider == "mock":
+            return MockVAD()
+        else:
+            logger.warning(f"Unknown VAD provider '{provider}'. Falling back to EnergyVAD.")
+            return EnergyVAD()

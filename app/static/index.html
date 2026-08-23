@@ -77,6 +77,13 @@
                         </select>
                     </div>
                     <div class="config-item">
+                        <label for="vadSelect">Voice Activity Detection (VAD) Module</label>
+                        <select id="vadSelect" class="custom-select">
+                            <option value="energy">RMS Energy VAD (Real-time Threshold)</option>
+                            <option value="mock">Mock VAD (Passthrough)</option>
+                        </select>
+                    </div>
+                    <div class="config-item">
                         <label for="voiceSelect">Edge Neural Voice</label>
                         <select id="voiceSelect" class="custom-select">
                             <option value="en-US-AvaNeural">en-US-AvaNeural (Female, Natural)</option>
@@ -103,10 +110,10 @@
                 <!-- Canvas Spectrum Visualizer -->
                 <div class="visualizer-container">
                     <canvas id="waveformCanvas"></canvas>
-                    <div class="visualizer-overlay" id="micStatusText">Click to Speak</div>
+                    <div class="visualizer-overlay" id="micStatusText">Click for Hands-Free Mode</div>
                 </div>
 
-                <!-- Record Button -->
+                <!-- Record & Stop Controls -->
                 <div class="mic-controls">
                     <button id="micBtn" class="mic-button" title="Toggle Live Microphone Stream">
                         <div class="mic-pulse"></div>
@@ -115,6 +122,12 @@
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                             <line x1="12" y1="19" x2="12" y2="22"/>
                         </svg>
+                    </button>
+                    <button id="stopBtn" class="stop-button" title="Stop AI Streaming Response (Interrupt)">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="2"/>
+                        </svg>
+                        <span>Stop</span>
                     </button>
                 </div>
 
