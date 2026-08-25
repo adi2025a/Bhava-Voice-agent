@@ -88,7 +88,13 @@ async def voice_websocket_endpoint(websocket: WebSocket):
                     "has_buffered_speech": has_speech_in_buffer
                 })
 
-                should_trigger_turn = vad_result.speech_end or (len(audio_buffer) > 120000 and not vad_result.is_speech)
+                # Clear buffer silently if it overruns without speech
+                if len(audio_buffer) > 120000 and not has_speech_in_buffer:
+                    audio_buffer.clear()
+                    vad_service.reset()
+
+                # Trigger STT only when VAD detects speech end AND speech was present in buffer
+                should_trigger_turn = vad_result.speech_end and has_speech_in_buffer
 
                 if should_trigger_turn and len(audio_buffer) > 1000:
                     if header_bytes and not audio_buffer.startswith(b'\x1a\x45\xdf\xa3'):

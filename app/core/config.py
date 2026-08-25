@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     stt_provider: str = "groq"
     dialogue_provider: str = "multi_agent"
     tts_provider: str = "edge"
-    vad_provider: str = "energy"
+    vad_provider: str = "silero"
 
     # API Keys
     groq_api_key: str = ""
@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     groq_llm_model: str = "groq/compound-mini"
 
     # Voice & Language defaults
-    default_tts_voice: str = "en-US-AvaNeural"
-    stt_language: str = "en"
+    default_tts_voice: str = "hi-IN-SwaraNeural"
+    stt_language: str = "hi"
 
     model_config = SettingsConfigDict(
         env_file=".env",
