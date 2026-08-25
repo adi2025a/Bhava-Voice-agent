@@ -79,4 +79,7 @@ class GroqSTT(BaseSTT):
                 last_error = e
 
         logger.error(f"All Groq STT models failed: {last_error}", exc_info=True)
-        raise last_error
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("All Groq STT models failed")
+
