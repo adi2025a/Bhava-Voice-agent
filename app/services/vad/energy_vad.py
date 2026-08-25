@@ -65,11 +65,11 @@ class EnergyVAD(BaseVAD):
         )
 
         if is_container:
-            # WebM Opus VBR: silence frames are small (~100-700 bytes per 250ms chunk),
-            # active speech frames are significantly larger (>850 bytes per 250ms chunk).
+            # WebM Opus VBR: ambient/silence frames are small (~200-1200 bytes per 250ms chunk),
+            # active human speech frames are significantly larger (>2000 bytes per 250ms chunk).
             chunk_size = len(audio_bytes)
-            is_speech = chunk_size > 850
-            confidence = min(1.0, chunk_size / 2500.0) if is_speech else 0.0
+            is_speech = chunk_size > 2000
+            confidence = min(1.0, chunk_size / 4000.0) if is_speech else 0.0
         else:
             rms = self._calculate_rms(audio_bytes)
             is_speech = rms >= self.energy_threshold

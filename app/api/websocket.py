@@ -64,54 +64,11 @@ async def voice_websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "websocket.disconnect":
                 break
 
-            # Handle Binary Audio Stream (Microphone Audio Chunks & Complete Blobs)
+            # Handle Binary Audio Stream (Microphone Audio Chunks)
             if "bytes" in message and message["bytes"]:
                 chunk_bytes = message["bytes"]
                 
-                # Check if payload is a complete standalone audio Blob (starts with EBML magic bytes & size > 2KB)
-                is_complete_blob = chunk_bytes.startswith(b'\x1a\x45\xdf\xa3') and len(chunk_bytes) > 2000
-
-                if is_complete_blob:
-                    logger.info(f"🎙️ Received complete audio recording turn ({len(chunk_bytes)} bytes). Running STT...")
-                    audio_buffer.clear()
-                    has_speech_in_buffer = False
-                    vad_service.reset()
-
-                    try:
-                        user_text = await stt_service.transcribe(chunk_bytes, filename="recording.webm")
-                    except Exception as e:
-                        logger.error(f"❌ STT Error on Blob: {e}")
-                        await websocket.send_json({"type": "error", "message": f"STT Error: {str(e)}"})
-                        continue
-
-                    if not user_text.strip():
-                        logger.info("ℹ️ Blob STT result was empty or unintelligible.")
-                        await websocket.send_json({
-                            "type": "stt_result",
-                            "text": "[No clear speech detected]"
-                        })
-                        continue
-
-                    logger.info(f"🗣️ STT Transcribed Text: '{user_text}'")
-                    await websocket.send_json({
-                        "type": "stt_result",
-                        "text": user_text
-                    })
-
-                    await _cancel_running_turn()
-                    current_turn_task = asyncio.create_task(
-                        _process_dialogue_turn(
-                            user_text=user_text,
-                            session_id=session_id,
-                            dialogue_service=dialogue_service,
-                            tts_service=tts_service,
-                            websocket=websocket
-                        )
-                    )
-                    ACTIVE_SESSIONS[session_id] = current_turn_task
-                    continue
-
-                # Otherwise handle as streamed chunk
+                # Capture WebM container header (starts with EBML magic bytes 0x1A 0x45 0xDF 0xA3)
                 if chunk_bytes.startswith(b'\x1a\x45\xdf\xa3'):
                     header_bytes = bytearray(chunk_bytes)
 
@@ -204,6 +161,48 @@ async def voice_websocket_endpoint(websocket: WebSocket):
                                 "type": "stt_result",
                                 "text": f"[Direct Text]: {user_text}"
                             })
+                            current_turn_task = asyncio.create_task(
+                                _process_dialogue_turn(
+                                    user_text=user_text,
+                                    session_id=session_id,
+                                    dialogue_service=dialogue_service,
+                                    tts_service=tts_service,
+                                    websocket=websocket
+                                )
+                            )
+                            ACTIVE_SESSIONS[session_id] = current_turn_task
+
+                    elif msg_type == "audio_turn":
+                        b64_data = payload.get("audio_b64", "")
+                        if b64_data:
+                            audio_bytes = base64.b64decode(b64_data)
+                            logger.info(f"🎙️ Received audio turn payload ({len(audio_bytes)} bytes). Transcribing via STT...")
+                            audio_buffer.clear()
+                            has_speech_in_buffer = False
+                            vad_service.reset()
+
+                            try:
+                                user_text = await stt_service.transcribe(audio_bytes, filename="recording.webm")
+                            except Exception as e:
+                                logger.error(f"❌ STT Error on audio turn: {e}")
+                                await websocket.send_json({"type": "error", "message": f"STT Error: {str(e)}"})
+                                continue
+
+                            if not user_text.strip():
+                                logger.info("ℹ️ Audio turn STT output was empty.")
+                                await websocket.send_json({
+                                    "type": "stt_result",
+                                    "text": "[No clear speech detected]"
+                                })
+                                continue
+
+                            logger.info(f"🗣️ STT Transcribed Text: '{user_text}'")
+                            await websocket.send_json({
+                                "type": "stt_result",
+                                "text": user_text
+                            })
+
+                            await _cancel_running_turn()
                             current_turn_task = asyncio.create_task(
                                 _process_dialogue_turn(
                                     user_text=user_text,

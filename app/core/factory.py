@@ -8,7 +8,7 @@ from app.core.interfaces.vad import BaseVAD
 from app.services.stt import GroqSTT, MockSTT
 from app.services.dialogue import MultiAgentEngine, MockDialogueEngine
 from app.services.tts import EdgeTTSProvider, MockTTS
-from app.services.vad import EnergyVAD, MockVAD
+from app.services.vad import EnergyVAD, SileroVAD, MockVAD
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +66,12 @@ class VoicePipelineFactory:
         provider = (provider_name or app_settings.vad_provider).lower()
         logger.info(f"Initializing VAD Provider: '{provider}'")
 
-        if provider == "energy":
+        if provider == "silero":
+            return SileroVAD()
+        elif provider == "energy":
             return EnergyVAD()
         elif provider == "mock":
             return MockVAD()
         else:
-            logger.warning(f"Unknown VAD provider '{provider}'. Falling back to EnergyVAD.")
-            return EnergyVAD()
+            logger.warning(f"Unknown VAD provider '{provider}'. Falling back to SileroVAD.")
+            return SileroVAD()

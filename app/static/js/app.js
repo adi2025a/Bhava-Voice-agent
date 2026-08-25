@@ -174,7 +174,13 @@ class VoiceApp {
         }
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: false
+                }
+            });
             const mimeType = this.getSupportedMimeType();
             const options = mimeType ? { mimeType } : {};
             console.log('[Bhava App] Starting MediaRecorder with MIME:', mimeType || 'default');
@@ -196,18 +202,13 @@ class VoiceApp {
             this.analyser.fftSize = 64;
             source.connect(this.analyser);
 
-            this.mediaRecorder.ondataavailable = async (e) => {
+            this.mediaRecorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
                     this.audioChunks.push(e.data);
-                    // Also stream live chunk over WebSocket for low latency buffer
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        const arrayBuffer = await e.data.arrayBuffer();
-                        this.ws.send(arrayBuffer);
-                    }
                 }
             };
 
-            this.mediaRecorder.onstop = async () => {
+            this.mediaRecorder.onstop = () => {
                 console.log('[Bhava App] MediaRecorder stopped. Total chunks collected:', this.audioChunks.length);
                 if (stream) stream.getTracks().forEach(track => track.stop());
 
@@ -218,11 +219,18 @@ class VoiceApp {
                     if (completeBlob.size > 500) {
                         this.micStatusText.textContent = '⚡ Transcribing & Routing...';
                         
-                        // Send complete audio blob over WebSocket or flush
                         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            const buffer = await completeBlob.arrayBuffer();
-                            this.ws.send(buffer);
-                            this.ws.send(JSON.stringify({ type: 'flush_audio' }));
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                                const base64Data = reader.result.split(',')[1];
+                                console.log('[Bhava App] Sending Base64 audio_turn payload, len:', base64Data.length);
+                                this.ws.send(JSON.stringify({
+                                    type: 'audio_turn',
+                                    audio_b64: base64Data,
+                                    mime: mimeType || 'audio/webm'
+                                }));
+                            };
+                            reader.readAsDataURL(completeBlob);
                         } else {
                             // REST fallback if WebSocket disconnected
                             this.uploadAudioBlobViaREST(completeBlob);
@@ -483,26 +491,34 @@ class VoiceApp {
         }
         const avgVolume = sum / bufferLength;
 
-        const SPEECH_THRESHOLD = 8;
-        const SILENCE_TIMEOUT_MS = 1200;
+        const SPEECH_THRESHOLD = 45; // High threshold for sensitive microphones
+        const SILENCE_TIMEOUT_MS = 800; // 800ms trailing silence to stop listening
 
         if (avgVolume > SPEECH_THRESHOLD) {
-            this.wasSpeaking = true;
-            this.silenceStartTime = null;
-            this.micStatusText.textContent = `🗣️ Speech Detected (Vol: ${Math.round(avgVolume)})`;
-        } else if (this.wasSpeaking) {
-            if (!this.silenceStartTime) {
-                this.silenceStartTime = Date.now();
-            } else {
-                const silenceDuration = Date.now() - this.silenceStartTime;
-                this.micStatusText.textContent = `⚡ Silence detected (${(silenceDuration / 1000).toFixed(1)}s)...`;
+            this.speechFrameCount = (this.speechFrameCount || 0) + 1;
+            if (this.speechFrameCount >= 3) {
+                this.wasSpeaking = true;
+                this.silenceStartTime = null;
+                this.micStatusText.textContent = `🗣️ Speech Detected (Vol: ${Math.round(avgVolume)})`;
+            }
+        } else {
+            this.speechFrameCount = 0;
+            if (this.wasSpeaking) {
+                if (!this.silenceStartTime) {
+                    this.silenceStartTime = Date.now();
+                } else {
+                    const silenceDuration = Date.now() - this.silenceStartTime;
+                    this.micStatusText.textContent = `⚡ Silence detected (${(silenceDuration / 1000).toFixed(1)}s)...`;
 
-                if (silenceDuration >= SILENCE_TIMEOUT_MS) {
-                    console.log('[Bhava App] Client VAD: 1.2s silence reached. Stopping recording turn...');
-                    this.wasSpeaking = false;
-                    this.silenceStartTime = null;
-                    this.stopRecording();
+                    if (silenceDuration >= SILENCE_TIMEOUT_MS) {
+                        console.log('[Bhava App] Client VAD: 800ms trailing silence reached. Stopping recording turn...');
+                        this.wasSpeaking = false;
+                        this.silenceStartTime = null;
+                        this.stopRecording();
+                    }
                 }
+            } else {
+                this.micStatusText.textContent = `🎙️ Listening... Speak into mic (Vol: ${Math.round(avgVolume)} / Threshold: 45)`;
             }
         }
 
