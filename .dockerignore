@@ -13,4 +13,3 @@ ENV
 .idea
 .git
 .gitignore
-uv.lock
